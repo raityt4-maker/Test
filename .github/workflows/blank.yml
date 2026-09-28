@@ -15,17 +15,25 @@ jobs:
 
     steps:
 
+    # =========================
+    # WINDOWS
+    # =========================
     - name: Windows Interface
       shell: pwsh
       run: |
         $a="HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+
         New-Item $a -Force | Out-Null
 
         # Botão Iniciar à esquerda
         Set-ItemProperty $a TaskbarAl 0 -ErrorAction SilentlyContinue
 
-        # Wallpaper do próprio Windows
-        $w=Get-ChildItem "C:\Windows\Web" -Recurse -Include *.jpg,*.jpeg,*.png -ErrorAction SilentlyContinue |
+        # Procurar wallpaper original do Windows
+        $w=Get-ChildItem `
+          "C:\Windows\Web" `
+          -Recurse `
+          -Include *.jpg,*.jpeg,*.png `
+          -ErrorAction SilentlyContinue |
           Select-Object -First 1
 
         if($w){
@@ -36,22 +44,33 @@ jobs:
 
           Add-Type @"
         using System.Runtime.InteropServices;
+
         public class Wallpaper {
           [DllImport("user32.dll")]
           public static extern int SystemParametersInfo(
-            int a,int b,string c,int d);
+            int a,
+            int b,
+            string c,
+            int d
+          );
         }
         "@
 
           [Wallpaper]::SystemParametersInfo(
-            20,0,$w.FullName,3
+            20,
+            0,
+            $w.FullName,
+            3
           )
         }
 
-        # Remover Unity Hub
-        Get-Process -Name "Unity Hub" `
+        # Remover Unity Hub caso exista
+        Get-Process `
+          -Name "Unity Hub" `
           -ErrorAction SilentlyContinue |
-          Stop-Process -Force -ErrorAction SilentlyContinue
+          Stop-Process `
+            -Force `
+            -ErrorAction SilentlyContinue
 
         Remove-Item `
           "$env:LOCALAPPDATA\Programs\Unity Hub" `
@@ -59,15 +78,21 @@ jobs:
           -Force `
           -ErrorAction SilentlyContinue
 
-        # Reiniciar Explorer corretamente
+        # Reiniciar Explorer
         Get-Process explorer `
           -ErrorAction SilentlyContinue |
-          Stop-Process -Force -ErrorAction SilentlyContinue
+          Stop-Process `
+            -Force `
+            -ErrorAction SilentlyContinue
 
         Start-Sleep -Seconds 2
 
         Start-Process explorer.exe
 
+
+    # =========================
+    # RDP
+    # =========================
     - name: Enable RDP
       shell: pwsh
       run: |
@@ -78,10 +103,15 @@ jobs:
         Enable-NetFirewallRule `
           -DisplayGroup "Remote Desktop"
 
+
+    # =========================
+    # USUÁRIO RDP
+    # =========================
     - name: Create RDP User
       shell: pwsh
       env:
         PASS: ${{ secrets.RDP_PASSWORD }}
+
       run: |
         if([string]::IsNullOrWhiteSpace($env:PASS)){
           throw "Configure o Secret RDP_PASSWORD."
@@ -113,6 +143,10 @@ jobs:
           -Member runneradmin `
           -ErrorAction SilentlyContinue
 
+
+    # =========================
+    # TAILSCALE
+    # =========================
     - name: Install Tailscale
       shell: pwsh
       run: |
@@ -129,10 +163,15 @@ jobs:
 
         Remove-Item $i -Force
 
+
+    # =========================
+    # CONECTAR TAILSCALE
+    # =========================
     - name: Connect Tailscale
       shell: pwsh
       env:
         KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+
       run: |
         if([string]::IsNullOrWhiteSpace($env:KEY)){
           throw "Configure o Secret TAILSCALE_AUTH_KEY."
@@ -163,24 +202,10 @@ jobs:
         Write-Host "PORT: 3389"
         Write-Host "============================"
 
-    - name: Install Steam
-      shell: pwsh
-      run: |
-        $i="$env:TEMP\SteamSetup.exe"
 
-        Invoke-WebRequest `
-          "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe" `
-          -OutFile $i
-
-        Start-Process `
-          $i `
-          -ArgumentList "/S" `
-          -Wait
-
-        Remove-Item $i -Force
-
-        Write-Host "Steam instalado."
-
+    # =========================
+    # CHROME
+    # =========================
     - name: Install Chrome
       shell: pwsh
       run: |
@@ -199,17 +224,126 @@ jobs:
 
         Write-Host "Chrome instalado."
 
+
+    # =========================
+    # 7-ZIP
+    # =========================
+    - name: Install 7-Zip
+      shell: pwsh
+      run: |
+        winget install `
+          --id 7zip.7zip `
+          --exact `
+          --silent `
+          --accept-source-agreements `
+          --accept-package-agreements
+
+        Write-Host "7-Zip instalado."
+
+
+    # =========================
+    # STEAM
+    # =========================
+    - name: Install Steam
+      shell: pwsh
+      run: |
+        $i="$env:TEMP\SteamSetup.exe"
+
+        Invoke-WebRequest `
+          "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe" `
+          -OutFile $i
+
+        Start-Process `
+          $i `
+          -ArgumentList "/S" `
+          -Wait
+
+        Remove-Item $i -Force
+
+        Write-Host "Steam instalado."
+
+
+    # =========================
+    # MINECRAFT
+    # =========================
+    - name: Install Minecraft Launcher
+      shell: pwsh
+      run: |
+        Write-Host "Instalando Minecraft Launcher..."
+
+        winget install `
+          --id Microsoft.MinecraftLauncher `
+          --exact `
+          --silent `
+          --accept-source-agreements `
+          --accept-package-agreements
+
+        Write-Host "Minecraft Launcher instalado."
+
+
+    # =========================
+    # VERIFICAR MINECRAFT
+    # =========================
+    - name: Check Minecraft
+      shell: pwsh
+      run: |
+        $found=$false
+
+        $paths=@(
+          "$env:ProgramFiles\Minecraft Launcher",
+          "$env:LOCALAPPDATA\Programs\Minecraft Launcher"
+        )
+
+        foreach($p in $paths){
+          if(Test-Path $p){
+            Write-Host "Minecraft encontrado em: $p"
+            $found=$true
+          }
+        }
+
+        if(!$found){
+          Write-Host "O Launcher pode estar instalado como aplicativo do Windows."
+        }
+
+
+    # =========================
+    # INFORMAÇÕES
+    # =========================
+    - name: PC Information
+      shell: pwsh
+      run: |
+        Write-Host ""
+        Write-Host "================================"
+        Write-Host "       AnDos PC VIRTUAL"
+        Write-Host "================================"
+        Write-Host "Minecraft: INSTALADO"
+        Write-Host "Steam: INSTALADO"
+        Write-Host "Chrome: INSTALADO"
+        Write-Host "7-Zip: INSTALADO"
+        Write-Host "Unity Hub: REMOVIDO"
+        Write-Host "Windows: ATIVO"
+        Write-Host "RDP: ATIVO"
+        Write-Host "Tailscale IP: $env:IP"
+        Write-Host "Usuário: runneradmin"
+        Write-Host "Porta: 3389"
+        Write-Host "================================"
+
+
+    # =========================
+    # MANTER PC LIGADO
+    # =========================
     - name: Keep Alive
       shell: pwsh
       run: |
         Write-Host ""
-        Write-Host "============================"
-        Write-Host " AnDos PC VIRTUAL ATIVO"
-        Write-Host " Steam: OK"
-        Write-Host " Chrome: OK"
-        Write-Host " Unity Hub: REMOVIDO"
-        Write-Host "============================"
-        Write-Host ""
+        Write-Host "================================"
+        Write-Host "   AnDos PC VIRTUAL ATIVO"
+        Write-Host "================================"
+        Write-Host "IP: $env:IP"
+        Write-Host "Minecraft: OK"
+        Write-Host "Steam: OK"
+        Write-Host "Chrome: OK"
+        Write-Host "================================"
 
         while($true){
           Write-Host "PC ativo - $(Get-Date)"
