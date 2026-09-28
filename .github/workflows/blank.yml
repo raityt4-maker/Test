@@ -23,6 +23,7 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+
     # =========================================================
     # SYSTEM INFORMATION
     # =========================================================
@@ -30,7 +31,7 @@ jobs:
     - name: System Information
       shell: pwsh
       run: |
-        Write-Host "=== ANDoS RDP DEPLOYMENT ===" -ForegroundColor Green
+        Write-Host "=== ANDOS PC VIRTUAL ===" -ForegroundColor Green
         Write-Host "Instance Number: ${{ inputs.instance_number }}" -ForegroundColor Yellow
         Write-Host "Runner: $env:RUNNER_NAME" -ForegroundColor Yellow
 
@@ -50,6 +51,7 @@ jobs:
           Select-Object @{Name="RAM_GB";Expression={
             [math]::Round($_.TotalPhysicalMemory / 1GB, 2)
           }}
+
 
     # =========================================================
     # OPTIMIZE WINDOWS
@@ -84,6 +86,7 @@ jobs:
 
         Write-Host "Optimization completed." -ForegroundColor Green
 
+
     # =========================================================
     # GPU
     # =========================================================
@@ -101,8 +104,9 @@ jobs:
                         Status |
           Format-List
 
+
     # =========================================================
-    # RDP
+    # ENABLE RDP
     # =========================================================
 
     - name: Enable RDP
@@ -125,14 +129,16 @@ jobs:
 
         Write-Host "RDP enabled." -ForegroundColor Green
 
+
     # =========================================================
-    # RDP USER
+    # CREATE RDP USER
     # =========================================================
 
     - name: Create RDP User
       shell: pwsh
       env:
         RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+
       run: |
         Write-Host "=== CREATING RDP USER ===" -ForegroundColor Green
 
@@ -154,7 +160,7 @@ jobs:
           New-LocalUser `
             -Name "runneradmin" `
             -Password $Password `
-            -Description "AnDos Virtual PC User" `
+            -Description "AnDos PC Virtual" `
             -PasswordNeverExpires
 
         } else {
@@ -162,7 +168,6 @@ jobs:
           Set-LocalUser `
             -Name "runneradmin" `
             -Password $Password
-
         }
 
         Add-LocalGroupMember `
@@ -171,7 +176,7 @@ jobs:
           -ErrorAction SilentlyContinue
 
         Write-Host "Username: runneradmin" -ForegroundColor Yellow
-        Write-Host "Password configured through RDP_PASSWORD." -ForegroundColor Yellow
+
 
     # =========================================================
     # TAILSCALE
@@ -204,6 +209,7 @@ jobs:
 
         Write-Host "Tailscale installed." -ForegroundColor Green
 
+
     # =========================================================
     # CONNECT TAILSCALE
     # =========================================================
@@ -212,6 +218,7 @@ jobs:
       shell: pwsh
       env:
         TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+
       run: |
         Write-Host "=== CONNECTING TAILSCALE ===" -ForegroundColor Green
 
@@ -233,8 +240,9 @@ jobs:
 
         Write-Host "Tailscale connected." -ForegroundColor Green
 
+
     # =========================================================
-    # GET IP
+    # GET TAILSCALE IP
     # =========================================================
 
     - name: Get Tailscale IP
@@ -254,12 +262,13 @@ jobs:
 
         Write-Host ""
         Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "          ANDOS RDP ACCESS" -ForegroundColor Cyan
+        Write-Host "           ANDOS RDP ACCESS" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "HOST: $tsIP" -ForegroundColor White
         Write-Host "USERNAME: runneradmin" -ForegroundColor White
         Write-Host "PORT: 3389" -ForegroundColor White
         Write-Host "========================================" -ForegroundColor Cyan
+
 
     # =========================================================
     # CHROME
@@ -286,6 +295,7 @@ jobs:
 
         Write-Host "Chrome installed." -ForegroundColor Green
 
+
     # =========================================================
     # 7-ZIP
     # =========================================================
@@ -311,449 +321,159 @@ jobs:
 
         Write-Host "7-Zip installed." -ForegroundColor Green
 
+
     # =========================================================
-    # CREATE VIRTUAL HUD
+    # ANDOS WALLPAPER
     # =========================================================
 
-    - name: Install Virtual HUD
+    - name: Install AnDos Wallpaper
       shell: pwsh
       run: |
 
-        Write-Host "=== INSTALLING ANDOS VIRTUAL HUD ===" -ForegroundColor Green
+        Write-Host "=== INSTALLING ANDOS WALLPAPER ===" -ForegroundColor Cyan
 
-        $HudDir = "C:\AnDosHUD"
+        $source = Join-Path `
+          $env:GITHUB_WORKSPACE `
+          "andos-wallpaper.jpg"
+
+        $destination = "C:\AnDos\andos-wallpaper.jpg"
 
         New-Item `
           -ItemType Directory `
-          -Path $HudDir `
-          -Force | Out-Null
+          -Path "C:\AnDos" `
+          -Force |
+          Out-Null
 
-        $HudScript = @'
-$ErrorActionPreference = "Stop"
+        if (-not (Test-Path $source)) {
 
-# Garantir PowerShell Windows
-if ($PSVersionTable.PSEdition -ne "Desktop") {
-    Start-Process "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" `
-        -ArgumentList "-ExecutionPolicy Bypass -File `"$PSCommandPath`"" `
-        -Wait
-    exit
-}
+          Write-Host ""
+          Write-Host "ERRO: andos-wallpaper.jpg não encontrado." `
+            -ForegroundColor Red
 
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-Add-Type -AssemblyName System.Drawing
+          Write-Host ""
+          Write-Host "Coloque o arquivo andos-wallpaper.jpg" `
+            -ForegroundColor Yellow
 
+          Write-Host "na raiz do repositório GitHub." `
+            -ForegroundColor Yellow
+
+          exit 1
+        }
+
+        Copy-Item `
+          -Path $source `
+          -Destination $destination `
+          -Force
+
+        Write-Host "Wallpaper copiado para:"
+        Write-Host $destination
+
+
+        # =====================================================
+        # SCRIPT DE WALLPAPER
+        # =====================================================
+
+        $wallpaperScript = "C:\AnDos\Set-Wallpaper.ps1"
+
+        @'
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 
-public class NativeInput {
-
-    [DllImport("user32.dll")]
-    public static extern bool SetCursorPos(int X, int Y);
-
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(
-        uint dwFlags,
-        uint dx,
-        uint dy,
-        uint dwData,
-        UIntPtr dwExtraInfo
+public class WallpaperAPI
+{
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SystemParametersInfo(
+        uint uiAction,
+        uint uiParam,
+        string pvParam,
+        uint fWinIni
     );
-
-    [DllImport("user32.dll")]
-    public static extern void keybd_event(
-        byte bVk,
-        byte bScan,
-        uint dwFlags,
-        UIntPtr dwExtraInfo
-    );
-
-    public const uint LEFTDOWN = 0x0002;
-    public const uint LEFTUP = 0x0004;
-    public const uint RIGHTDOWN = 0x0008;
-    public const uint RIGHTUP = 0x0010;
-    public const uint WHEEL = 0x0800;
-
-    public const uint KEYUP = 0x0002;
-
-    public static void LeftClick() {
-        mouse_event(LEFTDOWN,0,0,0,UIntPtr.Zero);
-        mouse_event(LEFTUP,0,0,0,UIntPtr.Zero);
-    }
-
-    public static void RightClick() {
-        mouse_event(RIGHTDOWN,0,0,0,UIntPtr.Zero);
-        mouse_event(RIGHTUP,0,0,0,UIntPtr.Zero);
-    }
-
-    public static void Scroll(int amount) {
-        mouse_event(WHEEL,0,0,(uint)amount,UIntPtr.Zero);
-    }
-
-    public static void Key(byte key) {
-        keybd_event(key,0,0,UIntPtr.Zero);
-        keybd_event(key,0,KEYUP,UIntPtr.Zero);
-    }
 }
 "@
 
-# =========================================================
-# FLOATING BUTTON
-# =========================================================
+$Wallpaper = "C:\AnDos\andos-wallpaper.jpg"
 
-$ball = New-Object System.Windows.Forms.Form
+if (Test-Path $Wallpaper)
+{
+    # SPI_SETDESKWALLPAPER
+    # SPIF_UPDATEINIFILE
+    # SPIF_SENDCHANGE
 
-$ball.FormBorderStyle = "None"
-$ball.StartPosition = "Manual"
-$ball.Size = New-Object System.Drawing.Size(58,58)
-$ball.TopMost = $true
-$ball.ShowInTaskbar = $false
-$ball.BackColor = [System.Drawing.Color]::FromArgb(25,25,30)
-$ball.Opacity = 0.94
-
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-
-$ball.Location = New-Object System.Drawing.Point(
-    ($screen.Width - 85),
-    120
-)
-
-$ball.Add_Paint({
-    param($sender,$e)
-
-    $brush = New-Object System.Drawing.SolidBrush(
-        [System.Drawing.Color]::FromArgb(30,144,255)
+    [WallpaperAPI]::SystemParametersInfo(
+        20,
+        0,
+        $Wallpaper,
+        3
     )
 
-    $e.Graphics.FillEllipse(
-        $brush,
-        4,
-        4,
-        50,
-        50
-    )
+    # Ajustar modo do wallpaper para preencher a tela
+    $desktop = "HKCU:\Control Panel\Desktop"
 
-    $font = New-Object System.Drawing.Font(
-        "Segoe UI",
-        18,
-        [System.Drawing.FontStyle]::Bold
-    )
+    Set-ItemProperty `
+        -Path $desktop `
+        -Name WallpaperStyle `
+        -Value "10"
 
-    $e.Graphics.DrawString(
-        "●",
-        $font,
-        [System.Drawing.Brushes]::White,
-        15,
-        10
-    )
+    Set-ItemProperty `
+        -Path $desktop `
+        -Name TileWallpaper `
+        -Value "0"
 
-    $brush.Dispose()
-})
-
-# =========================================================
-# HUD PANEL
-# =========================================================
-
-$hud = New-Object System.Windows.Forms.Form
-
-$hud.Text = "AnDos Virtual Control"
-$hud.Size = New-Object System.Drawing.Size(420,520)
-$hud.StartPosition = "CenterScreen"
-$hud.FormBorderStyle = "FixedSingle"
-$hud.MaximizeBox = $false
-$hud.TopMost = $true
-$hud.BackColor = [System.Drawing.Color]::FromArgb(20,22,28)
-$hud.ForeColor = [System.Drawing.Color]::White
-
-# =========================================================
-# TITLE
-# =========================================================
-
-$title = New-Object System.Windows.Forms.Label
-
-$title.Text = "ANDOS  •  CONTROLE VIRTUAL"
-$title.Font = New-Object System.Drawing.Font(
-    "Segoe UI",
-    12,
-    [System.Drawing.FontStyle]::Bold
-)
-
-$title.ForeColor = [System.Drawing.Color]::White
-$title.Location = New-Object System.Drawing.Point(18,15)
-$title.AutoSize = $true
-
-$hud.Controls.Add($title)
-
-# =========================================================
-# HELPER BUTTON
-# =========================================================
-
-function Add-HudButton {
-
-    param(
-        [string]$Text,
-        [int]$X,
-        [int]$Y,
-        [int]$Width = 70,
-        [int]$Height = 42,
-        [scriptblock]$Action
-    )
-
-    $button = New-Object System.Windows.Forms.Button
-
-    $button.Text = $Text
-    $button.Location = New-Object System.Drawing.Point($X,$Y)
-    $button.Size = New-Object System.Drawing.Size($Width,$Height)
-
-    $button.FlatStyle = "Flat"
-    $button.FlatAppearance.BorderSize = 0
-
-    $button.BackColor = [System.Drawing.Color]::FromArgb(38,42,52)
-    $button.ForeColor = [System.Drawing.Color]::White
-
-    $button.Font = New-Object System.Drawing.Font(
-        "Segoe UI",
-        9,
-        [System.Drawing.FontStyle]::Bold
-    )
-
-    $button.Add_Click($Action)
-
-    $hud.Controls.Add($button)
-
-    return $button
+    Write-Host "AnDos wallpaper aplicado."
 }
-
-# =========================================================
-# MOUSE
-# =========================================================
-
-Add-HudButton "CLICK" 20 60 90 42 {
-    [NativeInput]::LeftClick()
+else
+{
+    Write-Host "Wallpaper não encontrado."
 }
-
-Add-HudButton "RIGHT" 120 60 90 42 {
-    [NativeInput]::RightClick()
-}
-
-Add-HudButton "SCROLL ↑" 220 60 85 42 {
-    [NativeInput]::Scroll(600)
-}
-
-Add-HudButton "SCROLL ↓" 315 60 85 42 {
-    [NativeInput]::Scroll(600 - 1200)
-}
-
-# =========================================================
-# ARROWS
-# =========================================================
-
-Add-HudButton "↑" 165 120 70 42 {
-    [NativeInput]::Key(0x26)
-}
-
-Add-HudButton "←" 90 165 70 42 {
-    [NativeInput]::Key(0x25)
-}
-
-Add-HudButton "↓" 165 165 70 42 {
-    [NativeInput]::Key(0x28)
-}
-
-Add-HudButton "→" 240 165 70 42 {
-    [NativeInput]::Key(0x27)
-}
-
-# =========================================================
-# SPECIAL KEYS
-# =========================================================
-
-Add-HudButton "ENTER" 20 225 90 42 {
-    [NativeInput]::Key(0x0D)
-}
-
-Add-HudButton "ESC" 120 225 70 42 {
-    [NativeInput]::Key(0x1B)
-}
-
-Add-HudButton "TAB" 200 225 70 42 {
-    [NativeInput]::Key(0x09)
-}
-
-Add-HudButton "SPACE" 280 225 90 42 {
-    [NativeInput]::Key(0x20)
-}
-
-# =========================================================
-# MODIFIER KEYS
-# =========================================================
-
-Add-HudButton "SHIFT" 20 285 80 42 {
-    [NativeInput]::Key(0x10)
-}
-
-Add-HudButton "CTRL" 110 285 80 42 {
-    [NativeInput]::Key(0x11)
-}
-
-Add-HudButton "ALT" 200 285 80 42 {
-    [NativeInput]::Key(0x12)
-}
-
-Add-HudButton "WIN" 290 285 80 42 {
-    [NativeInput]::Key(0x5B)
-}
-
-# =========================================================
-# WINDOWS SHORTCUTS
-# =========================================================
-
-Add-HudButton "ALT + TAB" 20 345 105 42 {
-    [System.Windows.Forms.SendKeys]::SendWait("%{TAB}")
-}
-
-Add-HudButton "CTRL + C" 135 345 105 42 {
-    [System.Windows.Forms.SendKeys]::SendWait("^c")
-}
-
-Add-HudButton "CTRL + V" 250 345 105 42 {
-    [System.Windows.Forms.SendKeys]::SendWait("^v")
-}
-
-# =========================================================
-# CLOSE HUD
-# =========================================================
-
-Add-HudButton "FECHAR HUD" 125 410 150 45 {
-
-    $hud.Hide()
-}
-
-# =========================================================
-# BALL CLICK
-# =========================================================
-
-$ball.Add_Click({
-
-    if ($hud.Visible) {
-
-        $hud.Hide()
-
-    } else {
-
-        $hud.Show()
-        $hud.Activate()
-
-    }
-
-})
-
-# =========================================================
-# DRAG BALL
-# =========================================================
-
-$dragging = $false
-$offsetX = 0
-$offsetY = 0
-
-$ball.Add_MouseDown({
-
-    param($sender,$e)
-
-    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
-
-        $script:dragging = $true
-
-        $script:offsetX = $e.X
-        $script:offsetY = $e.Y
-    }
-})
-
-$ball.Add_MouseMove({
-
-    param($sender,$e)
-
-    if ($script:dragging) {
-
-        $pos = $ball.PointToScreen(
-            New-Object System.Drawing.Point($e.X,$e.Y)
-        )
-
-        $ball.Location = New-Object System.Drawing.Point(
-            ($pos.X - $script:offsetX),
-            ($pos.Y - $script:offsetY)
-        )
-    }
-})
-
-$ball.Add_MouseUp({
-
-    $script:dragging = $false
-})
-
-# =========================================================
-# SHOW
-# =========================================================
-
-$ball.Show()
-
-[System.Windows.Forms.Application]::Run()
-'@
-
-        $HudScriptPath = Join-Path $HudDir "AnDosHUD.ps1"
-
-        Set-Content `
-          -Path $HudScriptPath `
-          -Value $HudScript `
+'@ | Set-Content `
+          -Path $wallpaperScript `
           -Encoding UTF8
 
-        Write-Host "HUD script created:" -ForegroundColor Green
-        Write-Host $HudScriptPath
 
         # =====================================================
-        # CREATE STARTUP TASK
+        # TASK DE LOGIN
         # =====================================================
 
-        $Action = New-ScheduledTaskAction `
-          -Execute "powershell.exe" `
-          -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$HudScriptPath`""
+        Unregister-ScheduledTask `
+          -TaskName "AnDos Wallpaper" `
+          -Confirm:$false `
+          -ErrorAction SilentlyContinue
 
-        $Trigger = New-ScheduledTaskTrigger -AtLogOn
 
-        $Principal = New-ScheduledTaskPrincipal `
-          -UserId "runneradmin" `
+        $action = New-ScheduledTaskAction `
+          -Execute "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" `
+          -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"C:\AnDos\Set-Wallpaper.ps1`""
+
+
+        $trigger = New-ScheduledTaskTrigger `
+          -AtLogOn `
+          -User "runneradmin"
+
+
+        $principal = New-ScheduledTaskPrincipal `
+          -UserId "$env:COMPUTERNAME\runneradmin" `
           -LogonType Interactive `
           -RunLevel Limited
 
-        $Settings = New-ScheduledTaskSettingsSet `
-          -AllowStartIfOnBatteries `
-          -DontStopIfGoingOnBatteries `
-          -StartWhenAvailable
 
         Register-ScheduledTask `
-          -TaskName "AnDos Virtual HUD" `
-          -Action $Action `
-          -Trigger $Trigger `
-          -Principal $Principal `
-          -Settings $Settings `
-          -Force
+          -TaskName "AnDos Wallpaper" `
+          -Action $action `
+          -Trigger $trigger `
+          -Principal $principal `
+          -Force |
+          Out-Null
 
-        Write-Host "Startup task created." -ForegroundColor Green
 
-        # =====================================================
-        # TRY TO START HUD
-        # =====================================================
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Green
+        Write-Host "       ANDOS WALLPAPER INSTALADO" -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "O wallpaper será aplicado quando"
+        Write-Host "runneradmin entrar no Windows."
 
-        Write-Host "Starting HUD..." -ForegroundColor Yellow
-
-        Start-Process `
-          powershell.exe `
-          -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$HudScriptPath`""
-
-        Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "       ANDOS VIRTUAL HUD READY" -ForegroundColor Cyan
-        Write-Host "========================================" -ForegroundColor Cyan
 
     # =========================================================
     # CONNECTION DETAILS
@@ -762,24 +482,25 @@ $ball.Show()
     - name: Connection Details
       shell: pwsh
       run: |
+
         Write-Host ""
         Write-Host "╔══════════════════════════════════════╗" -ForegroundColor Cyan
         Write-Host "║          ANDOS RDP ACCESS            ║" -ForegroundColor Cyan
-        Write-Host "╠════════════════════════════════════════╣" -ForegroundColor Cyan
+        Write-Host "╠══════════════════════════════════════╣" -ForegroundColor Cyan
         Write-Host "║ Host: $env:TAILSCALE_IP" -ForegroundColor White
         Write-Host "║ Username: runneradmin                ║" -ForegroundColor White
         Write-Host "║ Port: 3389                           ║" -ForegroundColor White
         Write-Host "╚══════════════════════════════════════╝" -ForegroundColor Cyan
 
         Write-Host ""
-        Write-Host "Abra o Windows App no celular." -ForegroundColor Green
+        Write-Host "Windows App:" -ForegroundColor Green
         Write-Host "PC name: $env:TAILSCALE_IP" -ForegroundColor White
         Write-Host "User: runneradmin" -ForegroundColor White
         Write-Host "Password: valor do Secret RDP_PASSWORD" -ForegroundColor White
 
         Write-Host ""
-        Write-Host "HUD AnDos: instalado e configurado." -ForegroundColor Cyan
-        Write-Host "A bolinha aparecerá dentro da sessão do Windows." -ForegroundColor Cyan
+        Write-Host "Wallpaper AnDos: instalado." -ForegroundColor Cyan
+
 
     # =========================================================
     # KEEP SESSION ALIVE
@@ -792,8 +513,8 @@ $ball.Show()
         Write-Host ""
         Write-Host "=== SESSION ACTIVE ===" -ForegroundColor Green
         Write-Host "PC temporário iniciado." -ForegroundColor Cyan
-        Write-Host "HUD virtual instalado." -ForegroundColor Cyan
-        Write-Host "Limite máximo desta execução: 6 horas." -ForegroundColor Yellow
+        Write-Host "Wallpaper AnDos configurado." -ForegroundColor Cyan
+        Write-Host "Limite máximo: 6 horas." -ForegroundColor Yellow
         Write-Host ""
 
         $counter = 0
@@ -802,7 +523,8 @@ $ball.Show()
 
           $counter++
 
-          Write-Host "Heartbeat #$counter - $(Get-Date)" `
+          Write-Host `
+            "Heartbeat #$counter - $(Get-Date)" `
             -ForegroundColor Green
 
           $tsStatus = & `
@@ -811,14 +533,15 @@ $ball.Show()
 
           if ($LASTEXITCODE -eq 0) {
 
-            Write-Host "Tailscale: ACTIVE" `
+            Write-Host `
+              "Tailscale: ACTIVE" `
               -ForegroundColor Green
 
           } else {
 
-            Write-Host "Tailscale: ERROR" `
+            Write-Host `
+              "Tailscale: ERROR" `
               -ForegroundColor Red
-
           }
 
           Start-Sleep -Seconds 60
