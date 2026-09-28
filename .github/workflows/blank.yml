@@ -329,7 +329,18 @@ jobs:
           -Force | Out-Null
 
         $HudScript = @'
+$ErrorActionPreference = "Stop"
+
+# Garantir PowerShell Windows
+if ($PSVersionTable.PSEdition -ne "Desktop") {
+    Start-Process "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" `
+        -ArgumentList "-ExecutionPolicy Bypass -File `"$PSCommandPath`"" `
+        -Wait
+    exit
+}
+
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Drawing
 
 Add-Type @"
