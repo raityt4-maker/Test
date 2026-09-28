@@ -25,10 +25,14 @@ jobs:
 
         New-Item $a -Force | Out-Null
 
-        # Botão Iniciar à esquerda
-        Set-ItemProperty $a TaskbarAl 0 -ErrorAction SilentlyContinue
+        # Start à esquerda
+        Set-ItemProperty `
+          $a `
+          TaskbarAl `
+          0 `
+          -ErrorAction SilentlyContinue
 
-        # Wallpaper original do Windows
+        # Wallpaper do próprio Windows
         $w=Get-ChildItem `
           "C:\Windows\Web" `
           -Recurse `
@@ -98,7 +102,8 @@ jobs:
       run: |
         Set-ItemProperty `
           "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
-          fDenyTSConnections 0
+          fDenyTSConnections `
+          0
 
         Enable-NetFirewallRule `
           -DisplayGroup "Remote Desktop"
@@ -156,12 +161,19 @@ jobs:
           "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi" `
           -OutFile $i
 
+        if(!(Test-Path $i)){
+          throw "Falha ao baixar Tailscale."
+        }
+
         Start-Process `
           msiexec.exe `
           -ArgumentList "/i `"$i`" /quiet /norestart" `
           -Wait
 
-        Remove-Item $i -Force
+        Remove-Item `
+          $i `
+          -Force `
+          -ErrorAction SilentlyContinue
 
 
     # =========================
@@ -178,6 +190,10 @@ jobs:
         }
 
         $ts="C:\Program Files\Tailscale\tailscale.exe"
+
+        if(!(Test-Path $ts)){
+          throw "Tailscale não foi instalado."
+        }
 
         & $ts up `
           --authkey="$env:KEY" `
@@ -215,12 +231,19 @@ jobs:
           "https://dl.google.com/chrome/install/latest/chrome_installer.exe" `
           -OutFile $i
 
+        if(!(Test-Path $i)){
+          throw "Falha ao baixar Chrome."
+        }
+
         Start-Process `
           $i `
           -ArgumentList "/silent /install" `
           -Wait
 
-        Remove-Item $i -Force
+        Remove-Item `
+          $i `
+          -Force `
+          -ErrorAction SilentlyContinue
 
         Write-Host "Chrome instalado."
 
@@ -233,12 +256,47 @@ jobs:
       run: |
         $i="$env:TEMP\7zip.exe"
 
+        Write-Host "Baixando 7-Zip..."
+
         Invoke-WebRequest `
           "https://www.7-zip.org/a/7z2501-x64.exe" `
           -OutFile $i
 
         if(!(Test-Path $i)){
-          throw "Não foi possível baixar o 7-Zip."
+          throw "Falha ao baixar 7-Zip."
+        }
+
+        Write-Host "Instalando 7-Zip..."
+
+        Start-Process `
+          $i `
+          -ArgumentList "/S" `
+          -Wait
+
+        Remove-Item `
+          $i `
+          -Force `
+          -ErrorAction SilentlyContinue
+
+        Write-Host "7-Zip instalado."
+
+
+    # =========================
+    # STEAM
+    # =========================
+    - name: Install Steam
+      shell: pwsh
+      run: |
+        $i="$env:TEMP\SteamSetup.exe"
+
+        Write-Host "Baixando Steam..."
+
+        Invoke-WebRequest `
+          "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe" `
+          -OutFile $i
+
+        if(!(Test-Path $i)){
+          throw "Falha ao baixar Steam."
         }
 
         Start-Process `
@@ -251,51 +309,44 @@ jobs:
           -Force `
           -ErrorAction SilentlyContinue
 
-        Write-Host "7-Zip instalado com sucesso."
-
-
-    # =========================
-    # STEAM
-    # =========================
-    - name: Install Steam
-      shell: pwsh
-      run: |
-        $i="$env:TEMP\SteamSetup.exe"
-
-        Invoke-WebRequest `
-          "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe" `
-          -OutFile $i
-
-        Start-Process `
-          $i `
-          -ArgumentList "/S" `
-          -Wait
-
-        Remove-Item $i -Force
-
         Write-Host "Steam instalado."
 
 
     # =========================
-    # MINECRAFT
+    # MINECRAFT LAUNCHER
     # =========================
     - name: Install Minecraft Launcher
       shell: pwsh
       run: |
+        $i="$env:TEMP\MinecraftInstaller.exe"
+
+        Write-Host "Baixando Minecraft Launcher..."
+
+        Invoke-WebRequest `
+          "https://launcher.mojang.com/download/MinecraftInstaller.exe" `
+          -OutFile $i
+
+        if(!(Test-Path $i)){
+          throw "Não foi possível baixar o Minecraft Launcher."
+        }
+
         Write-Host "Instalando Minecraft Launcher..."
 
-        winget install `
-          --id Microsoft.MinecraftLauncher `
-          --exact `
-          --silent `
-          --accept-source-agreements `
-          --accept-package-agreements
+        Start-Process `
+          $i `
+          -ArgumentList "/install" `
+          -Wait
+
+        Remove-Item `
+          $i `
+          -Force `
+          -ErrorAction SilentlyContinue
 
         Write-Host "Minecraft Launcher instalado."
 
 
     # =========================
-    # VERIFICAR GPU
+    # GPU
     # =========================
     - name: Check GPU
       shell: pwsh
@@ -304,16 +355,17 @@ jobs:
         Write-Host "========== GPU =========="
 
         Get-CimInstance Win32_VideoController |
-          Select-Object Name,
-                        DriverVersion,
-                        AdapterRAM |
+          Select-Object `
+            Name,
+            DriverVersion,
+            AdapterRAM |
           Format-List
 
         Write-Host "========================="
 
 
     # =========================
-    # INFORMAÇÕES DO PC
+    # INFORMAÇÕES
     # =========================
     - name: PC Information
       shell: pwsh
@@ -336,7 +388,7 @@ jobs:
 
 
     # =========================
-    # MANTER PC ATIVO
+    # KEEP ALIVE
     # =========================
     - name: Keep Alive
       shell: pwsh
