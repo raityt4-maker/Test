@@ -22,47 +22,131 @@ jobs:
     - name: System Information
       shell: pwsh
       run: |
-        Write-Host "=== AnDos PC VIRTUAL ===" -ForegroundColor Green
-        Write-Host "Instance Number: ${{ inputs.instance_number }}" -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "        AnDos PC VIRTUAL" -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+
+        Write-Host "Instance: ${{ inputs.instance_number }}" -ForegroundColor Yellow
         Write-Host "Runner: $env:RUNNER_NAME" -ForegroundColor Yellow
 
-        Write-Host "`n=== SYSTEM SPECIFICATIONS ===" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "=== WINDOWS ===" -ForegroundColor Green
 
         Get-ComputerInfo |
           Select-Object WindowsProductName,
                         WindowsVersion,
                         OsArchitecture
 
+        Write-Host ""
+        Write-Host "=== CPU ===" -ForegroundColor Green
+
         Get-CimInstance Win32_Processor |
           Select-Object Name,
                         NumberOfCores,
                         NumberOfLogicalProcessors
+
+        Write-Host ""
+        Write-Host "=== RAM ===" -ForegroundColor Green
 
         Get-CimInstance Win32_ComputerSystem |
           Select-Object @{Name="RAM_GB";Expression={
             [math]::Round($_.TotalPhysicalMemory / 1GB, 2)
           }}
 
-    - name: Optimize Windows
+    - name: Optimize Windows Interface
       shell: pwsh
       run: |
-        Write-Host "=== PERFORMANCE OPTIMIZATION ===" -ForegroundColor Green
+        Write-Host "=== CONFIGURING WINDOWS INTERFACE ===" -ForegroundColor Green
 
+        # High performance
         powercfg /setactive SCHEME_MIN
 
-        $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+        # ----------------------------------------
+        # Visual Effects
+        # ----------------------------------------
 
-        New-Item -Path $path -Force | Out-Null
+        $visualPath =
+          "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+
+        New-Item `
+          -Path $visualPath `
+          -Force |
+          Out-Null
 
         Set-ItemProperty `
-          -Path $path `
+          -Path $visualPath `
           -Name VisualFXSetting `
           -Type DWord `
-          -Value 2
+          -Value 1
 
-        $personalize = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+        # ----------------------------------------
+        # Windows Explorer
+        # ----------------------------------------
 
-        New-Item -Path $personalize -Force | Out-Null
+        $explorerPath =
+          "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+
+        New-Item `
+          -Path $explorerPath `
+          -Force |
+          Out-Null
+
+        # Show file extensions
+        Set-ItemProperty `
+          -Path $explorerPath `
+          -Name HideFileExt `
+          -Type DWord `
+          -Value 0
+
+        # Show hidden files
+        Set-ItemProperty `
+          -Path $explorerPath `
+          -Name Hidden `
+          -Type DWord `
+          -Value 1
+
+        # Enable taskbar previews
+        Set-ItemProperty `
+          -Path $explorerPath `
+          -Name DisablePreviewDesktop `
+          -Type DWord `
+          -Value 0 `
+          -ErrorAction SilentlyContinue
+
+        # ----------------------------------------
+        # Desktop
+        # ----------------------------------------
+
+        $desktopPath =
+          "HKCU:\Control Panel\Desktop"
+
+        New-Item `
+          -Path $desktopPath `
+          -Force |
+          Out-Null
+
+        # Keep Windows wallpaper enabled
+        Set-ItemProperty `
+          -Path $desktopPath `
+          -Name WallpaperStyle `
+          -Value "10"
+
+        Set-ItemProperty `
+          -Path $desktopPath `
+          -Name TileWallpaper `
+          -Value "0"
+
+        # ----------------------------------------
+        # Disable unnecessary transparency
+        # ----------------------------------------
+
+        $personalize =
+          "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+
+        New-Item `
+          -Path $personalize `
+          -Force |
+          Out-Null
 
         Set-ItemProperty `
           -Path $personalize `
@@ -70,7 +154,20 @@ jobs:
           -Type DWord `
           -Value 0
 
-        Write-Host "Optimization completed." -ForegroundColor Green
+        # ----------------------------------------
+        # Windows Explorer restart
+        # ----------------------------------------
+
+        Stop-Process `
+          -Name explorer `
+          -Force `
+          -ErrorAction SilentlyContinue
+
+        Start-Sleep -Seconds 2
+
+        Start-Process explorer.exe
+
+        Write-Host "Windows interface configured." -ForegroundColor Green
 
     - name: Check GPU
       shell: pwsh
@@ -100,10 +197,36 @@ jobs:
           -Name "UserAuthentication" `
           -Value 1
 
+        # Allow RDP through Windows Firewall
         Enable-NetFirewallRule `
           -DisplayGroup "Remote Desktop"
 
         Write-Host "RDP enabled." -ForegroundColor Green
+
+    - name: Configure RDP Experience
+      shell: pwsh
+      run: |
+        Write-Host "=== CONFIGURING RDP EXPERIENCE ===" -ForegroundColor Green
+
+        $rdpPath =
+          "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"
+
+        # Enable desktop composition
+        Set-ItemProperty `
+          -Path $rdpPath `
+          -Name "UserAuthentication" `
+          -Type DWord `
+          -Value 1
+
+        # Allow visual effects when supported
+        Set-ItemProperty `
+          -Path $rdpPath `
+          -Name "ColorDepth" `
+          -Type DWord `
+          -Value 32 `
+          -ErrorAction SilentlyContinue
+
+        Write-Host "RDP interface configured." -ForegroundColor Green
 
     - name: Create RDP User
       shell: pwsh
@@ -147,15 +270,17 @@ jobs:
           -ErrorAction SilentlyContinue
 
         Write-Host "Username: runneradmin" -ForegroundColor Yellow
-        Write-Host "Password: configured through GitHub Secret RDP_PASSWORD" -ForegroundColor Yellow
 
     - name: Install Tailscale
       shell: pwsh
       run: |
         Write-Host "=== INSTALLING TAILSCALE ===" -ForegroundColor Green
 
-        $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
-        $installer = "$env:TEMP\tailscale.msi"
+        $tsUrl =
+          "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+
+        $installer =
+          "$env:TEMP\tailscale.msi"
 
         Invoke-WebRequest `
           -Uri $tsUrl `
@@ -166,12 +291,16 @@ jobs:
           -ArgumentList "/i `"$installer`" /quiet /norestart" `
           -Wait
 
-        Remove-Item $installer -Force
+        Remove-Item `
+          $installer `
+          -Force `
+          -ErrorAction SilentlyContinue
 
-        $ts = "C:\Program Files\Tailscale\tailscale.exe"
+        $ts =
+          "C:\Program Files\Tailscale\tailscale.exe"
 
         if (-not (Test-Path $ts)) {
-          throw "Tailscale não foi instalado corretamente."
+          throw "Tailscale não foi instalado."
         }
 
         Write-Host "Tailscale installed." -ForegroundColor Green
@@ -187,7 +316,8 @@ jobs:
           throw "Secret TAILSCALE_AUTH_KEY não foi encontrado."
         }
 
-        $ts = "C:\Program Files\Tailscale\tailscale.exe"
+        $ts =
+          "C:\Program Files\Tailscale\tailscale.exe"
 
         & $ts up `
           --authkey="$env:TAILSCALE_AUTH_KEY" `
@@ -206,22 +336,24 @@ jobs:
       run: |
         Write-Host "=== GETTING TAILSCALE IP ===" -ForegroundColor Green
 
-        $ts = "C:\Program Files\Tailscale\tailscale.exe"
+        $ts =
+          "C:\Program Files\Tailscale\tailscale.exe"
 
-        $tsIP = (& $ts ip -4 | Select-Object -First 1).Trim()
+        $tsIP =
+          (& $ts ip -4 | Select-Object -First 1).Trim()
 
         if ([string]::IsNullOrWhiteSpace($tsIP)) {
-          throw "Tailscale não forneceu um endereço IPv4."
+          throw "Tailscale não forneceu IPv4."
         }
 
         "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
 
         Write-Host ""
         Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "        AnDos PC VIRTUAL ACCESS" -ForegroundColor Cyan
+        Write-Host "        AnDos PC VIRTUAL" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "HOST: $tsIP" -ForegroundColor White
-        Write-Host "USERNAME: runneradmin" -ForegroundColor White
+        Write-Host "USER: runneradmin" -ForegroundColor White
         Write-Host "PORT: 3389" -ForegroundColor White
         Write-Host "========================================" -ForegroundColor Cyan
 
@@ -230,8 +362,11 @@ jobs:
       run: |
         Write-Host "=== INSTALLING GOOGLE CHROME ===" -ForegroundColor Green
 
-        $url = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
-        $installer = "$env:TEMP\chrome.exe"
+        $url =
+          "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
+
+        $installer =
+          "$env:TEMP\chrome.exe"
 
         Invoke-WebRequest `
           -Uri $url `
@@ -242,7 +377,10 @@ jobs:
           -ArgumentList "/silent /install" `
           -Wait
 
-        Remove-Item $installer -Force
+        Remove-Item `
+          $installer `
+          -Force `
+          -ErrorAction SilentlyContinue
 
         Write-Host "Chrome installed." -ForegroundColor Green
 
@@ -251,8 +389,11 @@ jobs:
       run: |
         Write-Host "=== INSTALLING 7-ZIP ===" -ForegroundColor Green
 
-        $url = "https://www.7-zip.org/a/7z2409-x64.exe"
-        $installer = "$env:TEMP\7zip.exe"
+        $url =
+          "https://www.7-zip.org/a/7z2409-x64.exe"
+
+        $installer =
+          "$env:TEMP\7zip.exe"
 
         Invoke-WebRequest `
           -Uri $url `
@@ -263,7 +404,10 @@ jobs:
           -ArgumentList "/S" `
           -Wait
 
-        Remove-Item $installer -Force
+        Remove-Item `
+          $installer `
+          -Force `
+          -ErrorAction SilentlyContinue
 
         Write-Host "7-Zip installed." -ForegroundColor Green
 
@@ -272,8 +416,11 @@ jobs:
       run: |
         Write-Host "=== INSTALLING STEAM ===" -ForegroundColor Green
 
-        $url = "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe"
-        $installer = "$env:TEMP\SteamSetup.exe"
+        $url =
+          "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe"
+
+        $installer =
+          "$env:TEMP\SteamSetup.exe"
 
         Invoke-WebRequest `
           -Uri $url `
@@ -288,24 +435,33 @@ jobs:
           -ArgumentList "/S" `
           -Wait
 
-        Remove-Item $installer -Force -ErrorAction SilentlyContinue
+        Remove-Item `
+          $installer `
+          -Force `
+          -ErrorAction SilentlyContinue
 
-        $steam = "${env:ProgramFiles(x86)}\Steam\steam.exe"
+        $steam =
+          "${env:ProgramFiles(x86)}\Steam\steam.exe"
 
         if (-not (Test-Path $steam)) {
           throw "Steam não foi instalado corretamente."
         }
 
         Write-Host "Steam installed successfully." -ForegroundColor Green
-        Write-Host "Steam path: $steam" -ForegroundColor Cyan
 
-    - name: Verify Installed Programs
+    - name: Verify Programs
       shell: pwsh
       run: |
-        Write-Host ""
-        Write-Host "=== INSTALLED PROGRAMS ===" -ForegroundColor Cyan
+        Write-Host "=== VERIFYING PROGRAMS ===" -ForegroundColor Cyan
 
-        $steam = "${env:ProgramFiles(x86)}\Steam\steam.exe"
+        $steam =
+          "${env:ProgramFiles(x86)}\Steam\steam.exe"
+
+        $chrome =
+          "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
+
+        $sevenZip =
+          "${env:ProgramFiles}\7-Zip\7z.exe"
 
         if (Test-Path $steam) {
           Write-Host "Steam: OK" -ForegroundColor Green
@@ -313,20 +469,16 @@ jobs:
           Write-Host "Steam: NOT FOUND" -ForegroundColor Red
         }
 
-        $chrome = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
-
         if (Test-Path $chrome) {
           Write-Host "Chrome: OK" -ForegroundColor Green
         } else {
-          Write-Host "Chrome: Check installation" -ForegroundColor Yellow
+          Write-Host "Chrome: NOT FOUND" -ForegroundColor Yellow
         }
-
-        $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
 
         if (Test-Path $sevenZip) {
           Write-Host "7-Zip: OK" -ForegroundColor Green
         } else {
-          Write-Host "7-Zip: Check installation" -ForegroundColor Yellow
+          Write-Host "7-Zip: NOT FOUND" -ForegroundColor Yellow
         }
 
     - name: Connection Details
@@ -334,32 +486,38 @@ jobs:
       run: |
         Write-Host ""
         Write-Host "╔══════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║        AnDos PC VIRTUAL              ║" -ForegroundColor Cyan
+        Write-Host "║          AnDos PC VIRTUAL            ║" -ForegroundColor Cyan
         Write-Host "╠══════════════════════════════════════╣" -ForegroundColor Cyan
         Write-Host "║ Host: $env:TAILSCALE_IP" -ForegroundColor White
-        Write-Host "║ Username: runneradmin                ║" -ForegroundColor White
+        Write-Host "║ User: runneradmin                    ║" -ForegroundColor White
         Write-Host "║ Port: 3389                           ║" -ForegroundColor White
         Write-Host "║ Steam: INSTALLED                     ║" -ForegroundColor Green
+        Write-Host "║ Windows UI: CONFIGURED               ║" -ForegroundColor Green
         Write-Host "╚══════════════════════════════════════╝" -ForegroundColor Cyan
         Write-Host ""
 
-        Write-Host "Abra o Tailscale no celular e conecte" -ForegroundColor Yellow
-        Write-Host "o dispositivo ao mesmo tailnet." -ForegroundColor Yellow
+        Write-Host "No celular:" -ForegroundColor Yellow
+        Write-Host "1. Abra o Tailscale." -ForegroundColor White
+        Write-Host "2. Conecte ao mesmo Tailnet." -ForegroundColor White
+        Write-Host "3. Abra o Windows App." -ForegroundColor White
+        Write-Host "4. Use o IP acima como PC name." -ForegroundColor White
 
         Write-Host ""
-        Write-Host "No Windows App use:" -ForegroundColor Green
-        Write-Host "PC name: $env:TAILSCALE_IP" -ForegroundColor White
-        Write-Host "User: runneradmin" -ForegroundColor White
-        Write-Host "Password: valor do Secret RDP_PASSWORD" -ForegroundColor White
+        Write-Host "PC name: $env:TAILSCALE_IP" -ForegroundColor Green
+        Write-Host "User: runneradmin" -ForegroundColor Green
+        Write-Host "Password: Secret RDP_PASSWORD" -ForegroundColor Green
 
     - name: Keep Session Alive
       shell: pwsh
       run: |
         Write-Host ""
-        Write-Host "=== SESSION ACTIVE ===" -ForegroundColor Green
-        Write-Host "AnDos PC VIRTUAL iniciado." -ForegroundColor Cyan
-        Write-Host "Steam instalado." -ForegroundColor Green
-        Write-Host "Limite máximo desta execução: 6 horas." -ForegroundColor Yellow
+        Write-Host "========================================" -ForegroundColor Green
+        Write-Host "        SESSION ACTIVE" -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Green
+        Write-Host "AnDos PC VIRTUAL está ativo." -ForegroundColor Cyan
+        Write-Host "Steam instalado." -ForegroundColor Cyan
+        Write-Host "Windows interface configurada." -ForegroundColor Cyan
+        Write-Host "Tempo máximo: 6 horas." -ForegroundColor Yellow
         Write-Host ""
 
         $counter = 0
@@ -368,7 +526,9 @@ jobs:
 
           $counter++
 
-          Write-Host "Heartbeat #$counter - $(Get-Date)" -ForegroundColor Green
+          Write-Host `
+            "Heartbeat #$counter - $(Get-Date)" `
+            -ForegroundColor Green
 
           $tsStatus = & `
             "C:\Program Files\Tailscale\tailscale.exe" `
@@ -376,14 +536,15 @@ jobs:
 
           if ($LASTEXITCODE -eq 0) {
 
-            Write-Host "Tailscale: ACTIVE" `
+            Write-Host `
+              "Tailscale: ACTIVE" `
               -ForegroundColor Green
 
           } else {
 
-            Write-Host "Tailscale: ERROR" `
+            Write-Host `
+              "Tailscale: ERROR" `
               -ForegroundColor Red
-
           }
 
           Start-Sleep -Seconds 60
