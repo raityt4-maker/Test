@@ -16,22 +16,13 @@ jobs:
 
     steps:
 
-    # =========================================================
-    # CHECKOUT
-    # =========================================================
-
     - name: Checkout Repository
       uses: actions/checkout@v4
-
-
-    # =========================================================
-    # SYSTEM INFORMATION
-    # =========================================================
 
     - name: System Information
       shell: pwsh
       run: |
-        Write-Host "=== ANDOS PC VIRTUAL ===" -ForegroundColor Green
+        Write-Host "=== AnDos PC VIRTUAL ===" -ForegroundColor Green
         Write-Host "Instance Number: ${{ inputs.instance_number }}" -ForegroundColor Yellow
         Write-Host "Runner: $env:RUNNER_NAME" -ForegroundColor Yellow
 
@@ -42,24 +33,15 @@ jobs:
                         WindowsVersion,
                         OsArchitecture
 
-        Write-Host "`n=== CPU ===" -ForegroundColor Cyan
-
         Get-CimInstance Win32_Processor |
           Select-Object Name,
                         NumberOfCores,
                         NumberOfLogicalProcessors
 
-        Write-Host "`n=== RAM ===" -ForegroundColor Cyan
-
         Get-CimInstance Win32_ComputerSystem |
           Select-Object @{Name="RAM_GB";Expression={
             [math]::Round($_.TotalPhysicalMemory / 1GB, 2)
           }}
-
-
-    # =========================================================
-    # OPTIMIZE WINDOWS
-    # =========================================================
 
     - name: Optimize Windows
       shell: pwsh
@@ -70,10 +52,7 @@ jobs:
 
         $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
 
-        New-Item `
-          -Path $path `
-          -Force |
-          Out-Null
+        New-Item -Path $path -Force | Out-Null
 
         Set-ItemProperty `
           -Path $path `
@@ -83,10 +62,7 @@ jobs:
 
         $personalize = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
 
-        New-Item `
-          -Path $personalize `
-          -Force |
-          Out-Null
+        New-Item -Path $personalize -Force | Out-Null
 
         Set-ItemProperty `
           -Path $personalize `
@@ -95,11 +71,6 @@ jobs:
           -Value 0
 
         Write-Host "Optimization completed." -ForegroundColor Green
-
-
-    # =========================================================
-    # GPU
-    # =========================================================
 
     - name: Check GPU
       shell: pwsh
@@ -113,11 +84,6 @@ jobs:
                         AdapterRAM,
                         Status |
           Format-List
-
-
-    # =========================================================
-    # ENABLE RDP
-    # =========================================================
 
     - name: Enable RDP
       shell: pwsh
@@ -139,16 +105,10 @@ jobs:
 
         Write-Host "RDP enabled." -ForegroundColor Green
 
-
-    # =========================================================
-    # CREATE RDP USER
-    # =========================================================
-
     - name: Create RDP User
       shell: pwsh
       env:
         RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
-
       run: |
         Write-Host "=== CREATING RDP USER ===" -ForegroundColor Green
 
@@ -170,15 +130,15 @@ jobs:
           New-LocalUser `
             -Name "runneradmin" `
             -Password $Password `
-            -Description "AnDos PC Virtual" `
+            -Description "AnDos PC Virtual User" `
             -PasswordNeverExpires
 
-        }
-        else {
+        } else {
 
           Set-LocalUser `
             -Name "runneradmin" `
             -Password $Password
+
         }
 
         Add-LocalGroupMember `
@@ -187,12 +147,7 @@ jobs:
           -ErrorAction SilentlyContinue
 
         Write-Host "Username: runneradmin" -ForegroundColor Yellow
-        Write-Host "RDP user configured." -ForegroundColor Green
-
-
-    # =========================================================
-    # INSTALL TAILSCALE
-    # =========================================================
+        Write-Host "Password: configured through GitHub Secret RDP_PASSWORD" -ForegroundColor Yellow
 
     - name: Install Tailscale
       shell: pwsh
@@ -211,10 +166,7 @@ jobs:
           -ArgumentList "/i `"$installer`" /quiet /norestart" `
           -Wait
 
-        Remove-Item `
-          $installer `
-          -Force `
-          -ErrorAction SilentlyContinue
+        Remove-Item $installer -Force
 
         $ts = "C:\Program Files\Tailscale\tailscale.exe"
 
@@ -224,16 +176,10 @@ jobs:
 
         Write-Host "Tailscale installed." -ForegroundColor Green
 
-
-    # =========================================================
-    # CONNECT TAILSCALE
-    # =========================================================
-
     - name: Connect Tailscale
       shell: pwsh
       env:
         TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-
       run: |
         Write-Host "=== CONNECTING TAILSCALE ===" -ForegroundColor Green
 
@@ -255,11 +201,6 @@ jobs:
 
         Write-Host "Tailscale connected." -ForegroundColor Green
 
-
-    # =========================================================
-    # GET TAILSCALE IP
-    # =========================================================
-
     - name: Get Tailscale IP
       shell: pwsh
       run: |
@@ -273,24 +214,16 @@ jobs:
           throw "Tailscale não forneceu um endereço IPv4."
         }
 
-        "TAILSCALE_IP=$tsIP" |
-          Out-File `
-          -FilePath $env:GITHUB_ENV `
-          -Append
+        "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
 
         Write-Host ""
         Write-Host "========================================" -ForegroundColor Cyan
-        Write-Host "          ANDOS RDP ACCESS" -ForegroundColor Cyan
+        Write-Host "        AnDos PC VIRTUAL ACCESS" -ForegroundColor Cyan
         Write-Host "========================================" -ForegroundColor Cyan
         Write-Host "HOST: $tsIP" -ForegroundColor White
         Write-Host "USERNAME: runneradmin" -ForegroundColor White
         Write-Host "PORT: 3389" -ForegroundColor White
         Write-Host "========================================" -ForegroundColor Cyan
-
-
-    # =========================================================
-    # GOOGLE CHROME
-    # =========================================================
 
     - name: Install Google Chrome
       shell: pwsh
@@ -309,17 +242,9 @@ jobs:
           -ArgumentList "/silent /install" `
           -Wait
 
-        Remove-Item `
-          $installer `
-          -Force `
-          -ErrorAction SilentlyContinue
+        Remove-Item $installer -Force
 
         Write-Host "Chrome installed." -ForegroundColor Green
-
-
-    # =========================================================
-    # 7-ZIP
-    # =========================================================
 
     - name: Install 7-Zip
       shell: pwsh
@@ -338,208 +263,103 @@ jobs:
           -ArgumentList "/S" `
           -Wait
 
-        Remove-Item `
-          $installer `
-          -Force `
-          -ErrorAction SilentlyContinue
+        Remove-Item $installer -Force
 
         Write-Host "7-Zip installed." -ForegroundColor Green
 
-
-    # =========================================================
-    # ANDOS WALLPAPER
-    # =========================================================
-
-    - name: Install AnDos Wallpaper
+    - name: Install Steam
       shell: pwsh
       run: |
+        Write-Host "=== INSTALLING STEAM ===" -ForegroundColor Green
 
-        Write-Host "=== INSTALLING ANDOS WALLPAPER ===" -ForegroundColor Cyan
+        $url = "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe"
+        $installer = "$env:TEMP\SteamSetup.exe"
 
-        # Arquivo precisa estar na raiz do repositório
-        $source = Join-Path `
-          $env:GITHUB_WORKSPACE `
-          "andos-wallpaper.jpg"
+        Invoke-WebRequest `
+          -Uri $url `
+          -OutFile $installer
 
-        $destination = "C:\AnDos\andos-wallpaper.jpg"
-
-        # Criar pasta
-        New-Item `
-          -ItemType Directory `
-          -Path "C:\AnDos" `
-          -Force |
-          Out-Null
-
-        # Verificar arquivo
-        if (-not (Test-Path $source)) {
-
-          Write-Host ""
-          Write-Host "ERRO: andos-wallpaper.jpg não encontrado." `
-            -ForegroundColor Red
-
-          Write-Host ""
-          Write-Host "Coloque a imagem na raiz do repositório:" `
-            -ForegroundColor Yellow
-
-          Write-Host "andos-wallpaper.jpg" `
-            -ForegroundColor Yellow
-
-          exit 1
+        if (-not (Test-Path $installer)) {
+          throw "SteamSetup.exe não foi baixado."
         }
 
-        # Copiar wallpaper
-        Copy-Item `
-          -Path $source `
-          -Destination $destination `
-          -Force
+        Start-Process `
+          -FilePath $installer `
+          -ArgumentList "/S" `
+          -Wait
 
+        Remove-Item $installer -Force -ErrorAction SilentlyContinue
+
+        $steam = "${env:ProgramFiles(x86)}\Steam\steam.exe"
+
+        if (-not (Test-Path $steam)) {
+          throw "Steam não foi instalado corretamente."
+        }
+
+        Write-Host "Steam installed successfully." -ForegroundColor Green
+        Write-Host "Steam path: $steam" -ForegroundColor Cyan
+
+    - name: Verify Installed Programs
+      shell: pwsh
+      run: |
         Write-Host ""
-        Write-Host "Wallpaper copiado para:" `
-          -ForegroundColor Green
+        Write-Host "=== INSTALLED PROGRAMS ===" -ForegroundColor Cyan
 
-        Write-Host $destination
+        $steam = "${env:ProgramFiles(x86)}\Steam\steam.exe"
 
+        if (Test-Path $steam) {
+          Write-Host "Steam: OK" -ForegroundColor Green
+        } else {
+          Write-Host "Steam: NOT FOUND" -ForegroundColor Red
+        }
 
-        # =====================================================
-        # SCRIPT DO WALLPAPER
-        # =====================================================
+        $chrome = "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe"
 
-        $wallpaperScript = "C:\AnDos\Set-Wallpaper.ps1"
+        if (Test-Path $chrome) {
+          Write-Host "Chrome: OK" -ForegroundColor Green
+        } else {
+          Write-Host "Chrome: Check installation" -ForegroundColor Yellow
+        }
 
-        $scriptLines = @(
-          '$wallpaper = "C:\AnDos\andos-wallpaper.jpg"',
-          'if (Test-Path $wallpaper) {',
-          '  Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name Wallpaper -Value $wallpaper',
-          '  Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name WallpaperStyle -Value "10"',
-          '  Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name TileWallpaper -Value "0"',
-          '  Start-Process "RUNDLL32.EXE" -ArgumentList "user32.dll,UpdatePerUserSystemParameters"',
-          '}'
-        )
+        $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
 
-        Set-Content `
-          -Path $wallpaperScript `
-          -Value $scriptLines `
-          -Encoding UTF8
-
-
-        # =====================================================
-        # REMOVER TAREFA ANTIGA
-        # =====================================================
-
-        Unregister-ScheduledTask `
-          -TaskName "AnDos Wallpaper" `
-          -Confirm:$false `
-          -ErrorAction SilentlyContinue
-
-
-        # =====================================================
-        # AÇÃO
-        # =====================================================
-
-        $action = New-ScheduledTaskAction `
-          -Execute "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" `
-          -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"C:\AnDos\Set-Wallpaper.ps1`""
-
-
-        # =====================================================
-        # TRIGGER
-        # =====================================================
-
-        $trigger = New-ScheduledTaskTrigger `
-          -AtLogOn `
-          -User "runneradmin"
-
-
-        # =====================================================
-        # USUÁRIO DA TAREFA
-        # =====================================================
-
-        $principal = New-ScheduledTaskPrincipal `
-          -UserId "$env:COMPUTERNAME\runneradmin" `
-          -LogonType Interactive `
-          -RunLevel Limited
-
-
-        # =====================================================
-        # REGISTRAR TAREFA
-        # =====================================================
-
-        Register-ScheduledTask `
-          -TaskName "AnDos Wallpaper" `
-          -Action $action `
-          -Trigger $trigger `
-          -Principal $principal `
-          -Force |
-          Out-Null
-
-
-        Write-Host ""
-        Write-Host "========================================" `
-          -ForegroundColor Green
-
-        Write-Host "     ANDOS WALLPAPER INSTALADO" `
-          -ForegroundColor Green
-
-        Write-Host "========================================" `
-          -ForegroundColor Green
-
-        Write-Host ""
-        Write-Host "O wallpaper será aplicado quando"
-        Write-Host "runneradmin entrar no Windows."
-
-
-    # =========================================================
-    # CONNECTION DETAILS
-    # =========================================================
+        if (Test-Path $sevenZip) {
+          Write-Host "7-Zip: OK" -ForegroundColor Green
+        } else {
+          Write-Host "7-Zip: Check installation" -ForegroundColor Yellow
+        }
 
     - name: Connection Details
       shell: pwsh
       run: |
-
         Write-Host ""
         Write-Host "╔══════════════════════════════════════╗" -ForegroundColor Cyan
-        Write-Host "║          ANDOS RDP ACCESS            ║" -ForegroundColor Cyan
+        Write-Host "║        AnDos PC VIRTUAL              ║" -ForegroundColor Cyan
         Write-Host "╠══════════════════════════════════════╣" -ForegroundColor Cyan
         Write-Host "║ Host: $env:TAILSCALE_IP" -ForegroundColor White
         Write-Host "║ Username: runneradmin                ║" -ForegroundColor White
         Write-Host "║ Port: 3389                           ║" -ForegroundColor White
+        Write-Host "║ Steam: INSTALLED                     ║" -ForegroundColor Green
         Write-Host "╚══════════════════════════════════════╝" -ForegroundColor Cyan
-
         Write-Host ""
 
-        Write-Host "Windows App:" -ForegroundColor Green
+        Write-Host "Abra o Tailscale no celular e conecte" -ForegroundColor Yellow
+        Write-Host "o dispositivo ao mesmo tailnet." -ForegroundColor Yellow
+
+        Write-Host ""
+        Write-Host "No Windows App use:" -ForegroundColor Green
         Write-Host "PC name: $env:TAILSCALE_IP" -ForegroundColor White
         Write-Host "User: runneradmin" -ForegroundColor White
         Write-Host "Password: valor do Secret RDP_PASSWORD" -ForegroundColor White
 
-        Write-Host ""
-
-        Write-Host "Wallpaper AnDos: INSTALADO" `
-          -ForegroundColor Green
-
-
-    # =========================================================
-    # KEEP SESSION ALIVE
-    # =========================================================
-
     - name: Keep Session Alive
       shell: pwsh
       run: |
-
         Write-Host ""
-        Write-Host "========================================" -ForegroundColor Green
-        Write-Host "       ANDOS PC VIRTUAL ATIVO" -ForegroundColor Green
-        Write-Host "========================================" -ForegroundColor Green
-        Write-Host ""
-
-        Write-Host "RDP: ATIVO" -ForegroundColor Green
-        Write-Host "Tailscale: ATIVO" -ForegroundColor Green
-        Write-Host "Wallpaper: INSTALADO" -ForegroundColor Green
-        Write-Host ""
-
-        Write-Host "Limite máximo: 6 horas." `
-          -ForegroundColor Yellow
-
+        Write-Host "=== SESSION ACTIVE ===" -ForegroundColor Green
+        Write-Host "AnDos PC VIRTUAL iniciado." -ForegroundColor Cyan
+        Write-Host "Steam instalado." -ForegroundColor Green
+        Write-Host "Limite máximo desta execução: 6 horas." -ForegroundColor Yellow
         Write-Host ""
 
         $counter = 0
@@ -548,9 +368,7 @@ jobs:
 
           $counter++
 
-          Write-Host `
-            "Heartbeat #$counter - $(Get-Date)" `
-            -ForegroundColor Green
+          Write-Host "Heartbeat #$counter - $(Get-Date)" -ForegroundColor Green
 
           $tsStatus = & `
             "C:\Program Files\Tailscale\tailscale.exe" `
@@ -558,16 +376,14 @@ jobs:
 
           if ($LASTEXITCODE -eq 0) {
 
-            Write-Host `
-              "Tailscale: ACTIVE" `
+            Write-Host "Tailscale: ACTIVE" `
               -ForegroundColor Green
 
-          }
-          else {
+          } else {
 
-            Write-Host `
-              "Tailscale: ERROR" `
+            Write-Host "Tailscale: ERROR" `
               -ForegroundColor Red
+
           }
 
           Start-Sleep -Seconds 60
