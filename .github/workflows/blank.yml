@@ -1,0 +1,814 @@
+name: AnDos PC VIRTUAL
+
+on:
+  workflow_dispatch:
+    inputs:
+      instance_number:
+        description: 'Instance Number (1-10)'
+        required: true
+        default: '1'
+        type: string
+
+jobs:
+  deploy-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+
+    # =========================================================
+    # CHECKOUT
+    # =========================================================
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    # =========================================================
+    # SYSTEM INFORMATION
+    # =========================================================
+
+    - name: System Information
+      shell: pwsh
+      run: |
+        Write-Host "=== ANDoS RDP DEPLOYMENT ===" -ForegroundColor Green
+        Write-Host "Instance Number: ${{ inputs.instance_number }}" -ForegroundColor Yellow
+        Write-Host "Runner: $env:RUNNER_NAME" -ForegroundColor Yellow
+
+        Write-Host "`n=== SYSTEM SPECIFICATIONS ===" -ForegroundColor Cyan
+
+        Get-ComputerInfo |
+          Select-Object WindowsProductName,
+                        WindowsVersion,
+                        OsArchitecture
+
+        Get-CimInstance Win32_Processor |
+          Select-Object Name,
+                        NumberOfCores,
+                        NumberOfLogicalProcessors
+
+        Get-CimInstance Win32_ComputerSystem |
+          Select-Object @{Name="RAM_GB";Expression={
+            [math]::Round($_.TotalPhysicalMemory / 1GB, 2)
+          }}
+
+    # =========================================================
+    # OPTIMIZE WINDOWS
+    # =========================================================
+
+    - name: Optimize Windows
+      shell: pwsh
+      run: |
+        Write-Host "=== PERFORMANCE OPTIMIZATION ===" -ForegroundColor Green
+
+        powercfg /setactive SCHEME_MIN
+
+        $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+
+        New-Item -Path $path -Force | Out-Null
+
+        Set-ItemProperty `
+          -Path $path `
+          -Name VisualFXSetting `
+          -Type DWord `
+          -Value 2
+
+        $personalize = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+
+        New-Item -Path $personalize -Force | Out-Null
+
+        Set-ItemProperty `
+          -Path $personalize `
+          -Name EnableTransparency `
+          -Type DWord `
+          -Value 0
+
+        Write-Host "Optimization completed." -ForegroundColor Green
+
+    # =========================================================
+    # GPU
+    # =========================================================
+
+    - name: Check GPU
+      shell: pwsh
+      run: |
+        Write-Host "=== GPU INFORMATION ===" -ForegroundColor Cyan
+
+        Get-CimInstance Win32_VideoController |
+          Select-Object Name,
+                        DriverVersion,
+                        VideoProcessor,
+                        AdapterRAM,
+                        Status |
+          Format-List
+
+    # =========================================================
+    # RDP
+    # =========================================================
+
+    - name: Enable RDP
+      shell: pwsh
+      run: |
+        Write-Host "=== ENABLING REMOTE DESKTOP ===" -ForegroundColor Green
+
+        Set-ItemProperty `
+          -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+          -Name "fDenyTSConnections" `
+          -Value 0
+
+        Set-ItemProperty `
+          -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+          -Name "UserAuthentication" `
+          -Value 1
+
+        Enable-NetFirewallRule `
+          -DisplayGroup "Remote Desktop"
+
+        Write-Host "RDP enabled." -ForegroundColor Green
+
+    # =========================================================
+    # RDP USER
+    # =========================================================
+
+    - name: Create RDP User
+      shell: pwsh
+      env:
+        RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
+      run: |
+        Write-Host "=== CREATING RDP USER ===" -ForegroundColor Green
+
+        if ([string]::IsNullOrWhiteSpace($env:RDP_PASSWORD)) {
+          throw "Secret RDP_PASSWORD não foi configurado."
+        }
+
+        $Password = ConvertTo-SecureString `
+          $env:RDP_PASSWORD `
+          -AsPlainText `
+          -Force
+
+        $user = Get-LocalUser `
+          -Name "runneradmin" `
+          -ErrorAction SilentlyContinue
+
+        if ($null -eq $user) {
+
+          New-LocalUser `
+            -Name "runneradmin" `
+            -Password $Password `
+            -Description "AnDos Virtual PC User" `
+            -PasswordNeverExpires
+
+        } else {
+
+          Set-LocalUser `
+            -Name "runneradmin" `
+            -Password $Password
+
+        }
+
+        Add-LocalGroupMember `
+          -Group "Remote Desktop Users" `
+          -Member "runneradmin" `
+          -ErrorAction SilentlyContinue
+
+        Write-Host "Username: runneradmin" -ForegroundColor Yellow
+        Write-Host "Password configured through RDP_PASSWORD." -ForegroundColor Yellow
+
+    # =========================================================
+    # TAILSCALE
+    # =========================================================
+
+    - name: Install Tailscale
+      shell: pwsh
+      run: |
+        Write-Host "=== INSTALLING TAILSCALE ===" -ForegroundColor Green
+
+        $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+        $installer = "$env:TEMP\tailscale.msi"
+
+        Invoke-WebRequest `
+          -Uri $tsUrl `
+          -OutFile $installer
+
+        Start-Process `
+          msiexec.exe `
+          -ArgumentList "/i `"$installer`" /quiet /norestart" `
+          -Wait
+
+        Remove-Item $installer -Force
+
+        $ts = "C:\Program Files\Tailscale\tailscale.exe"
+
+        if (-not (Test-Path $ts)) {
+          throw "Tailscale não foi instalado corretamente."
+        }
+
+        Write-Host "Tailscale installed." -ForegroundColor Green
+
+    # =========================================================
+    # CONNECT TAILSCALE
+    # =========================================================
+
+    - name: Connect Tailscale
+      shell: pwsh
+      env:
+        TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+      run: |
+        Write-Host "=== CONNECTING TAILSCALE ===" -ForegroundColor Green
+
+        if ([string]::IsNullOrWhiteSpace($env:TAILSCALE_AUTH_KEY)) {
+          throw "Secret TAILSCALE_AUTH_KEY não foi encontrado."
+        }
+
+        $ts = "C:\Program Files\Tailscale\tailscale.exe"
+
+        & $ts up `
+          --authkey="$env:TAILSCALE_AUTH_KEY" `
+          --hostname="andos-${{ github.run_id }}"
+
+        if ($LASTEXITCODE -ne 0) {
+          throw "Falha ao conectar ao Tailscale."
+        }
+
+        Start-Sleep -Seconds 15
+
+        Write-Host "Tailscale connected." -ForegroundColor Green
+
+    # =========================================================
+    # GET IP
+    # =========================================================
+
+    - name: Get Tailscale IP
+      shell: pwsh
+      run: |
+        Write-Host "=== GETTING TAILSCALE IP ===" -ForegroundColor Green
+
+        $ts = "C:\Program Files\Tailscale\tailscale.exe"
+
+        $tsIP = (& $ts ip -4 | Select-Object -First 1).Trim()
+
+        if ([string]::IsNullOrWhiteSpace($tsIP)) {
+          throw "Tailscale não forneceu um endereço IPv4."
+        }
+
+        "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "          ANDOS RDP ACCESS" -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "HOST: $tsIP" -ForegroundColor White
+        Write-Host "USERNAME: runneradmin" -ForegroundColor White
+        Write-Host "PORT: 3389" -ForegroundColor White
+        Write-Host "========================================" -ForegroundColor Cyan
+
+    # =========================================================
+    # CHROME
+    # =========================================================
+
+    - name: Install Google Chrome
+      shell: pwsh
+      run: |
+        Write-Host "=== INSTALLING GOOGLE CHROME ===" -ForegroundColor Green
+
+        $url = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
+        $installer = "$env:TEMP\chrome.exe"
+
+        Invoke-WebRequest `
+          -Uri $url `
+          -OutFile $installer
+
+        Start-Process `
+          -FilePath $installer `
+          -ArgumentList "/silent /install" `
+          -Wait
+
+        Remove-Item $installer -Force
+
+        Write-Host "Chrome installed." -ForegroundColor Green
+
+    # =========================================================
+    # 7-ZIP
+    # =========================================================
+
+    - name: Install 7-Zip
+      shell: pwsh
+      run: |
+        Write-Host "=== INSTALLING 7-ZIP ===" -ForegroundColor Green
+
+        $url = "https://www.7-zip.org/a/7z2409-x64.exe"
+        $installer = "$env:TEMP\7zip.exe"
+
+        Invoke-WebRequest `
+          -Uri $url `
+          -OutFile $installer
+
+        Start-Process `
+          -FilePath $installer `
+          -ArgumentList "/S" `
+          -Wait
+
+        Remove-Item $installer -Force
+
+        Write-Host "7-Zip installed." -ForegroundColor Green
+
+    # =========================================================
+    # CREATE VIRTUAL HUD
+    # =========================================================
+
+    - name: Install Virtual HUD
+      shell: pwsh
+      run: |
+
+        Write-Host "=== INSTALLING ANDOS VIRTUAL HUD ===" -ForegroundColor Green
+
+        $HudDir = "C:\AnDosHUD"
+
+        New-Item `
+          -ItemType Directory `
+          -Path $HudDir `
+          -Force | Out-Null
+
+        $HudScript = @'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public class NativeInput {
+
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(
+        uint dwFlags,
+        uint dx,
+        uint dy,
+        uint dwData,
+        UIntPtr dwExtraInfo
+    );
+
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(
+        byte bVk,
+        byte bScan,
+        uint dwFlags,
+        UIntPtr dwExtraInfo
+    );
+
+    public const uint LEFTDOWN = 0x0002;
+    public const uint LEFTUP = 0x0004;
+    public const uint RIGHTDOWN = 0x0008;
+    public const uint RIGHTUP = 0x0010;
+    public const uint WHEEL = 0x0800;
+
+    public const uint KEYUP = 0x0002;
+
+    public static void LeftClick() {
+        mouse_event(LEFTDOWN,0,0,0,UIntPtr.Zero);
+        mouse_event(LEFTUP,0,0,0,UIntPtr.Zero);
+    }
+
+    public static void RightClick() {
+        mouse_event(RIGHTDOWN,0,0,0,UIntPtr.Zero);
+        mouse_event(RIGHTUP,0,0,0,UIntPtr.Zero);
+    }
+
+    public static void Scroll(int amount) {
+        mouse_event(WHEEL,0,0,(uint)amount,UIntPtr.Zero);
+    }
+
+    public static void Key(byte key) {
+        keybd_event(key,0,0,UIntPtr.Zero);
+        keybd_event(key,0,KEYUP,UIntPtr.Zero);
+    }
+}
+"@
+
+# =========================================================
+# FLOATING BUTTON
+# =========================================================
+
+$ball = New-Object System.Windows.Forms.Form
+
+$ball.FormBorderStyle = "None"
+$ball.StartPosition = "Manual"
+$ball.Size = New-Object System.Drawing.Size(58,58)
+$ball.TopMost = $true
+$ball.ShowInTaskbar = $false
+$ball.BackColor = [System.Drawing.Color]::FromArgb(25,25,30)
+$ball.Opacity = 0.94
+
+$screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+
+$ball.Location = New-Object System.Drawing.Point(
+    ($screen.Width - 85),
+    120
+)
+
+$ball.Add_Paint({
+    param($sender,$e)
+
+    $brush = New-Object System.Drawing.SolidBrush(
+        [System.Drawing.Color]::FromArgb(30,144,255)
+    )
+
+    $e.Graphics.FillEllipse(
+        $brush,
+        4,
+        4,
+        50,
+        50
+    )
+
+    $font = New-Object System.Drawing.Font(
+        "Segoe UI",
+        18,
+        [System.Drawing.FontStyle]::Bold
+    )
+
+    $e.Graphics.DrawString(
+        "●",
+        $font,
+        [System.Drawing.Brushes]::White,
+        15,
+        10
+    )
+
+    $brush.Dispose()
+})
+
+# =========================================================
+# HUD PANEL
+# =========================================================
+
+$hud = New-Object System.Windows.Forms.Form
+
+$hud.Text = "AnDos Virtual Control"
+$hud.Size = New-Object System.Drawing.Size(420,520)
+$hud.StartPosition = "CenterScreen"
+$hud.FormBorderStyle = "FixedSingle"
+$hud.MaximizeBox = $false
+$hud.TopMost = $true
+$hud.BackColor = [System.Drawing.Color]::FromArgb(20,22,28)
+$hud.ForeColor = [System.Drawing.Color]::White
+
+# =========================================================
+# TITLE
+# =========================================================
+
+$title = New-Object System.Windows.Forms.Label
+
+$title.Text = "ANDOS  •  CONTROLE VIRTUAL"
+$title.Font = New-Object System.Drawing.Font(
+    "Segoe UI",
+    12,
+    [System.Drawing.FontStyle]::Bold
+)
+
+$title.ForeColor = [System.Drawing.Color]::White
+$title.Location = New-Object System.Drawing.Point(18,15)
+$title.AutoSize = $true
+
+$hud.Controls.Add($title)
+
+# =========================================================
+# HELPER BUTTON
+# =========================================================
+
+function Add-HudButton {
+
+    param(
+        [string]$Text,
+        [int]$X,
+        [int]$Y,
+        [int]$Width = 70,
+        [int]$Height = 42,
+        [scriptblock]$Action
+    )
+
+    $button = New-Object System.Windows.Forms.Button
+
+    $button.Text = $Text
+    $button.Location = New-Object System.Drawing.Point($X,$Y)
+    $button.Size = New-Object System.Drawing.Size($Width,$Height)
+
+    $button.FlatStyle = "Flat"
+    $button.FlatAppearance.BorderSize = 0
+
+    $button.BackColor = [System.Drawing.Color]::FromArgb(38,42,52)
+    $button.ForeColor = [System.Drawing.Color]::White
+
+    $button.Font = New-Object System.Drawing.Font(
+        "Segoe UI",
+        9,
+        [System.Drawing.FontStyle]::Bold
+    )
+
+    $button.Add_Click($Action)
+
+    $hud.Controls.Add($button)
+
+    return $button
+}
+
+# =========================================================
+# MOUSE
+# =========================================================
+
+Add-HudButton "CLICK" 20 60 90 42 {
+    [NativeInput]::LeftClick()
+}
+
+Add-HudButton "RIGHT" 120 60 90 42 {
+    [NativeInput]::RightClick()
+}
+
+Add-HudButton "SCROLL ↑" 220 60 85 42 {
+    [NativeInput]::Scroll(600)
+}
+
+Add-HudButton "SCROLL ↓" 315 60 85 42 {
+    [NativeInput]::Scroll(600 - 1200)
+}
+
+# =========================================================
+# ARROWS
+# =========================================================
+
+Add-HudButton "↑" 165 120 70 42 {
+    [NativeInput]::Key(0x26)
+}
+
+Add-HudButton "←" 90 165 70 42 {
+    [NativeInput]::Key(0x25)
+}
+
+Add-HudButton "↓" 165 165 70 42 {
+    [NativeInput]::Key(0x28)
+}
+
+Add-HudButton "→" 240 165 70 42 {
+    [NativeInput]::Key(0x27)
+}
+
+# =========================================================
+# SPECIAL KEYS
+# =========================================================
+
+Add-HudButton "ENTER" 20 225 90 42 {
+    [NativeInput]::Key(0x0D)
+}
+
+Add-HudButton "ESC" 120 225 70 42 {
+    [NativeInput]::Key(0x1B)
+}
+
+Add-HudButton "TAB" 200 225 70 42 {
+    [NativeInput]::Key(0x09)
+}
+
+Add-HudButton "SPACE" 280 225 90 42 {
+    [NativeInput]::Key(0x20)
+}
+
+# =========================================================
+# MODIFIER KEYS
+# =========================================================
+
+Add-HudButton "SHIFT" 20 285 80 42 {
+    [NativeInput]::Key(0x10)
+}
+
+Add-HudButton "CTRL" 110 285 80 42 {
+    [NativeInput]::Key(0x11)
+}
+
+Add-HudButton "ALT" 200 285 80 42 {
+    [NativeInput]::Key(0x12)
+}
+
+Add-HudButton "WIN" 290 285 80 42 {
+    [NativeInput]::Key(0x5B)
+}
+
+# =========================================================
+# WINDOWS SHORTCUTS
+# =========================================================
+
+Add-HudButton "ALT + TAB" 20 345 105 42 {
+    [System.Windows.Forms.SendKeys]::SendWait("%{TAB}")
+}
+
+Add-HudButton "CTRL + C" 135 345 105 42 {
+    [System.Windows.Forms.SendKeys]::SendWait("^c")
+}
+
+Add-HudButton "CTRL + V" 250 345 105 42 {
+    [System.Windows.Forms.SendKeys]::SendWait("^v")
+}
+
+# =========================================================
+# CLOSE HUD
+# =========================================================
+
+Add-HudButton "FECHAR HUD" 125 410 150 45 {
+
+    $hud.Hide()
+}
+
+# =========================================================
+# BALL CLICK
+# =========================================================
+
+$ball.Add_Click({
+
+    if ($hud.Visible) {
+
+        $hud.Hide()
+
+    } else {
+
+        $hud.Show()
+        $hud.Activate()
+
+    }
+
+})
+
+# =========================================================
+# DRAG BALL
+# =========================================================
+
+$dragging = $false
+$offsetX = 0
+$offsetY = 0
+
+$ball.Add_MouseDown({
+
+    param($sender,$e)
+
+    if ($e.Button -eq [System.Windows.Forms.MouseButtons]::Left) {
+
+        $script:dragging = $true
+
+        $script:offsetX = $e.X
+        $script:offsetY = $e.Y
+    }
+})
+
+$ball.Add_MouseMove({
+
+    param($sender,$e)
+
+    if ($script:dragging) {
+
+        $pos = $ball.PointToScreen(
+            New-Object System.Drawing.Point($e.X,$e.Y)
+        )
+
+        $ball.Location = New-Object System.Drawing.Point(
+            ($pos.X - $script:offsetX),
+            ($pos.Y - $script:offsetY)
+        )
+    }
+})
+
+$ball.Add_MouseUp({
+
+    $script:dragging = $false
+})
+
+# =========================================================
+# SHOW
+# =========================================================
+
+$ball.Show()
+
+[System.Windows.Forms.Application]::Run()
+'@
+
+        $HudScriptPath = Join-Path $HudDir "AnDosHUD.ps1"
+
+        Set-Content `
+          -Path $HudScriptPath `
+          -Value $HudScript `
+          -Encoding UTF8
+
+        Write-Host "HUD script created:" -ForegroundColor Green
+        Write-Host $HudScriptPath
+
+        # =====================================================
+        # CREATE STARTUP TASK
+        # =====================================================
+
+        $Action = New-ScheduledTaskAction `
+          -Execute "powershell.exe" `
+          -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$HudScriptPath`""
+
+        $Trigger = New-ScheduledTaskTrigger -AtLogOn
+
+        $Principal = New-ScheduledTaskPrincipal `
+          -UserId "runneradmin" `
+          -LogonType Interactive `
+          -RunLevel Limited
+
+        $Settings = New-ScheduledTaskSettingsSet `
+          -AllowStartIfOnBatteries `
+          -DontStopIfGoingOnBatteries `
+          -StartWhenAvailable
+
+        Register-ScheduledTask `
+          -TaskName "AnDos Virtual HUD" `
+          -Action $Action `
+          -Trigger $Trigger `
+          -Principal $Principal `
+          -Settings $Settings `
+          -Force
+
+        Write-Host "Startup task created." -ForegroundColor Green
+
+        # =====================================================
+        # TRY TO START HUD
+        # =====================================================
+
+        Write-Host "Starting HUD..." -ForegroundColor Yellow
+
+        Start-Process `
+          powershell.exe `
+          -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$HudScriptPath`""
+
+        Write-Host "========================================" -ForegroundColor Cyan
+        Write-Host "       ANDOS VIRTUAL HUD READY" -ForegroundColor Cyan
+        Write-Host "========================================" -ForegroundColor Cyan
+
+    # =========================================================
+    # CONNECTION DETAILS
+    # =========================================================
+
+    - name: Connection Details
+      shell: pwsh
+      run: |
+        Write-Host ""
+        Write-Host "╔══════════════════════════════════════╗" -ForegroundColor Cyan
+        Write-Host "║          ANDOS RDP ACCESS            ║" -ForegroundColor Cyan
+        Write-Host "╠════════════════════════════════════════╣" -ForegroundColor Cyan
+        Write-Host "║ Host: $env:TAILSCALE_IP" -ForegroundColor White
+        Write-Host "║ Username: runneradmin                ║" -ForegroundColor White
+        Write-Host "║ Port: 3389                           ║" -ForegroundColor White
+        Write-Host "╚══════════════════════════════════════╝" -ForegroundColor Cyan
+
+        Write-Host ""
+        Write-Host "Abra o Windows App no celular." -ForegroundColor Green
+        Write-Host "PC name: $env:TAILSCALE_IP" -ForegroundColor White
+        Write-Host "User: runneradmin" -ForegroundColor White
+        Write-Host "Password: valor do Secret RDP_PASSWORD" -ForegroundColor White
+
+        Write-Host ""
+        Write-Host "HUD AnDos: instalado e configurado." -ForegroundColor Cyan
+        Write-Host "A bolinha aparecerá dentro da sessão do Windows." -ForegroundColor Cyan
+
+    # =========================================================
+    # KEEP SESSION ALIVE
+    # =========================================================
+
+    - name: Keep Session Alive
+      shell: pwsh
+      run: |
+
+        Write-Host ""
+        Write-Host "=== SESSION ACTIVE ===" -ForegroundColor Green
+        Write-Host "PC temporário iniciado." -ForegroundColor Cyan
+        Write-Host "HUD virtual instalado." -ForegroundColor Cyan
+        Write-Host "Limite máximo desta execução: 6 horas." -ForegroundColor Yellow
+        Write-Host ""
+
+        $counter = 0
+
+        while ($true) {
+
+          $counter++
+
+          Write-Host "Heartbeat #$counter - $(Get-Date)" `
+            -ForegroundColor Green
+
+          $tsStatus = & `
+            "C:\Program Files\Tailscale\tailscale.exe" `
+            status 2>&1
+
+          if ($LASTEXITCODE -eq 0) {
+
+            Write-Host "Tailscale: ACTIVE" `
+              -ForegroundColor Green
+
+          } else {
+
+            Write-Host "Tailscale: ERROR" `
+              -ForegroundColor Red
+
+          }
+
+          Start-Sleep -Seconds 60
+        }
