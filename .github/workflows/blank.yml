@@ -28,7 +28,7 @@ jobs:
         # Botão Iniciar à esquerda
         Set-ItemProperty $a TaskbarAl 0 -ErrorAction SilentlyContinue
 
-        # Procurar wallpaper original do Windows
+        # Wallpaper original do Windows
         $w=Get-ChildItem `
           "C:\Windows\Web" `
           -Recurse `
@@ -64,7 +64,7 @@ jobs:
           )
         }
 
-        # Remover Unity Hub caso exista
+        # Remover Unity Hub
         Get-Process `
           -Name "Unity Hub" `
           -ErrorAction SilentlyContinue |
@@ -231,14 +231,27 @@ jobs:
     - name: Install 7-Zip
       shell: pwsh
       run: |
-        winget install `
-          --id 7zip.7zip `
-          --exact `
-          --silent `
-          --accept-source-agreements `
-          --accept-package-agreements
+        $i="$env:TEMP\7zip.exe"
 
-        Write-Host "7-Zip instalado."
+        Invoke-WebRequest `
+          "https://www.7-zip.org/a/7z2501-x64.exe" `
+          -OutFile $i
+
+        if(!(Test-Path $i)){
+          throw "Não foi possível baixar o 7-Zip."
+        }
+
+        Start-Process `
+          $i `
+          -ArgumentList "/S" `
+          -Wait
+
+        Remove-Item `
+          $i `
+          -Force `
+          -ErrorAction SilentlyContinue
+
+        Write-Host "7-Zip instalado com sucesso."
 
 
     # =========================
@@ -282,32 +295,25 @@ jobs:
 
 
     # =========================
-    # VERIFICAR MINECRAFT
+    # VERIFICAR GPU
     # =========================
-    - name: Check Minecraft
+    - name: Check GPU
       shell: pwsh
       run: |
-        $found=$false
+        Write-Host ""
+        Write-Host "========== GPU =========="
 
-        $paths=@(
-          "$env:ProgramFiles\Minecraft Launcher",
-          "$env:LOCALAPPDATA\Programs\Minecraft Launcher"
-        )
+        Get-CimInstance Win32_VideoController |
+          Select-Object Name,
+                        DriverVersion,
+                        AdapterRAM |
+          Format-List
 
-        foreach($p in $paths){
-          if(Test-Path $p){
-            Write-Host "Minecraft encontrado em: $p"
-            $found=$true
-          }
-        }
-
-        if(!$found){
-          Write-Host "O Launcher pode estar instalado como aplicativo do Windows."
-        }
+        Write-Host "========================="
 
 
     # =========================
-    # INFORMAÇÕES
+    # INFORMAÇÕES DO PC
     # =========================
     - name: PC Information
       shell: pwsh
@@ -330,7 +336,7 @@ jobs:
 
 
     # =========================
-    # MANTER PC LIGADO
+    # MANTER PC ATIVO
     # =========================
     - name: Keep Alive
       shell: pwsh
@@ -343,6 +349,7 @@ jobs:
         Write-Host "Minecraft: OK"
         Write-Host "Steam: OK"
         Write-Host "Chrome: OK"
+        Write-Host "7-Zip: OK"
         Write-Host "================================"
 
         while($true){
